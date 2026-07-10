@@ -48,6 +48,148 @@ def load_data():
 
 df = load_data()
 
+# =====================================================
+# CACHED MONTH-WISE MAE — DAILY FORECAST
+# One bar per calendar month across all years
+# =====================================================
+
+@st.cache_data
+def calculate_monthly_daily_mae(input_df):
+
+    monthly_df = input_df.dropna(
+        subset=[
+            "valid_time_ist",
+            "Actual_GHI",
+            "Daily_Forecast_GHI"
+        ]
+    ).copy()
+
+    monthly_df["hour"] = (
+        monthly_df["valid_time_ist"].dt.hour
+        + monthly_df["valid_time_ist"].dt.minute / 60
+    )
+
+    monthly_df = monthly_df[
+        (monthly_df["hour"] >= 6.5)
+        & (monthly_df["hour"] <= 17.5)
+        & (monthly_df["Actual_GHI"] > 50)
+    ].copy()
+
+    if monthly_df.empty:
+        return pd.DataFrame(), None, None
+
+    monthly_df["Absolute_Error"] = (
+        monthly_df["Actual_GHI"]
+        - monthly_df["Daily_Forecast_GHI"]
+    ).abs()
+
+    monthly_df["Month_Number"] = (
+        monthly_df["valid_time_ist"].dt.month
+    )
+
+    monthly_result = (
+        monthly_df
+        .groupby("Month_Number", as_index=False)
+        .agg(Monthly_MAE=("Absolute_Error", "mean"))
+        .sort_values("Month_Number")
+        .reset_index(drop=True)
+    )
+
+    month_names = {
+        1: "Jan",
+        2: "Feb",
+        3: "Mar",
+        4: "Apr",
+        5: "May",
+        6: "Jun",
+        7: "Jul",
+        8: "Aug",
+        9: "Sep",
+        10: "Oct",
+        11: "Nov",
+        12: "Dec"
+    }
+
+    monthly_result["Month"] = (
+        monthly_result["Month_Number"].map(month_names)
+    )
+
+    start_date = monthly_df["valid_time_ist"].dt.date.min()
+    end_date = monthly_df["valid_time_ist"].dt.date.max()
+
+    return monthly_result, start_date, end_date
+
+# =====================================================
+# CACHED MONTH-WISE MAE — 2-HOUR AHEAD FORECAST
+# One bar per calendar month across all years
+# =====================================================
+
+@st.cache_data
+def calculate_monthly_2hr_mae(input_df):
+
+    monthly_df = input_df.dropna(
+        subset=[
+            "valid_time_ist",
+            "Actual_GHI",
+            "Two_Hour_Ahead_Forecast"
+        ]
+    ).copy()
+
+    monthly_df["hour"] = (
+        monthly_df["valid_time_ist"].dt.hour
+        + monthly_df["valid_time_ist"].dt.minute / 60
+    )
+
+    monthly_df = monthly_df[
+        (monthly_df["hour"] >= 6.5)
+        & (monthly_df["hour"] <= 17.5)
+        & (monthly_df["Actual_GHI"] > 50)
+    ].copy()
+
+    if monthly_df.empty:
+        return pd.DataFrame(), None, None
+
+    monthly_df["Absolute_Error"] = (
+        monthly_df["Actual_GHI"]
+        - monthly_df["Two_Hour_Ahead_Forecast"]
+    ).abs()
+
+    monthly_df["Month_Number"] = (
+        monthly_df["valid_time_ist"].dt.month
+    )
+
+    monthly_result = (
+        monthly_df
+        .groupby("Month_Number", as_index=False)
+        .agg(Monthly_MAE=("Absolute_Error", "mean"))
+        .sort_values("Month_Number")
+        .reset_index(drop=True)
+    )
+
+    month_names = {
+        1: "Jan",
+        2: "Feb",
+        3: "Mar",
+        4: "Apr",
+        5: "May",
+        6: "Jun",
+        7: "Jul",
+        8: "Aug",
+        9: "Sep",
+        10: "Oct",
+        11: "Nov",
+        12: "Dec"
+    }
+
+    monthly_result["Month"] = (
+        monthly_result["Month_Number"].map(month_names)
+    )
+
+    start_date = monthly_df["valid_time_ist"].dt.date.min()
+    end_date = monthly_df["valid_time_ist"].dt.date.max()
+
+    return monthly_result, start_date, end_date
+    
 st.subheader("🏭 Plant & Forecast Configuration")
 
 available_dates = sorted(df["valid_time_ist"].dt.date.unique())
@@ -1557,96 +1699,27 @@ else:
         
 # =====================================================
 # MONTH-WISE OVERALL MAE — DAILY FORECAST
-# One bar per calendar month across all years
 # =====================================================
 
-monthly_mae_df = df.dropna(
-    subset=[
-        "valid_time_ist",
-        "Actual_GHI",
-        "Daily_Forecast_GHI"
-    ]
-).copy()
-
-monthly_mae_df["hour"] = (
-    monthly_mae_df["valid_time_ist"].dt.hour
-    + monthly_mae_df["valid_time_ist"].dt.minute / 60
+monthly_daily_performance, daily_monthly_start, daily_monthly_end = (
+    calculate_monthly_daily_mae(df)
 )
 
-# Apply the same evaluation conditions used elsewhere
-monthly_mae_df = monthly_mae_df[
-    (monthly_mae_df["hour"] >= 6.5)
-    & (monthly_mae_df["hour"] <= 17.5)
-    & (monthly_mae_df["Actual_GHI"] > 50)
-].copy()
-
-if not monthly_mae_df.empty:
-
-    # Absolute error for every valid timestamp
-    monthly_mae_df["Absolute_Error"] = (
-        monthly_mae_df["Actual_GHI"]
-        - monthly_mae_df["Daily_Forecast_GHI"]
-    ).abs()
-
-    # Extract calendar month number: January=1, ..., December=12
-    monthly_mae_df["Month_Number"] = (
-        monthly_mae_df["valid_time_ist"].dt.month
-    )
-
-    # Calculate one MAE value for each month across all years
-    monthly_performance = (
-        monthly_mae_df
-        .groupby("Month_Number", as_index=False)
-        .agg(
-            Monthly_MAE=("Absolute_Error", "mean")
-        )
-        .sort_values("Month_Number")
-        .reset_index(drop=True)
-    )
-
-    month_names = {
-        1: "Jan",
-        2: "Feb",
-        3: "Mar",
-        4: "Apr",
-        5: "May",
-        6: "Jun",
-        7: "Jul",
-        8: "Aug",
-        9: "Sep",
-        10: "Oct",
-        11: "Nov",
-        12: "Dec"
-    }
-
-    monthly_performance["Month"] = (
-        monthly_performance["Month_Number"]
-        .map(month_names)
-    )
-
-    monthly_start_date = (
-        monthly_mae_df["valid_time_ist"].dt.date.min()
-    )
-
-    monthly_end_date = (
-        monthly_mae_df["valid_time_ist"].dt.date.max()
-    )
+if not monthly_daily_performance.empty:
 
     st.markdown(
         f"## 📊 Month-Wise MAE of Daily Forecast "
-        f"({monthly_start_date} to {monthly_end_date})"
+        f"({daily_monthly_start} to {daily_monthly_end})"
     )
 
     with st.container(border=True):
 
-        fig_monthly_mae = go.Figure()
+        fig_monthly_daily = go.Figure()
 
-        fig_monthly_mae.add_trace(go.Bar(
-            x=monthly_performance["Month"],
-            y=monthly_performance["Monthly_MAE"],
+        fig_monthly_daily.add_trace(go.Bar(
+            x=monthly_daily_performance["Month"],
+            y=monthly_daily_performance["Monthly_MAE"],
             name="Daily Forecast MAE",
-
-            # Same orange as the Daily Forecast line
             marker=dict(
                 color=DAILY_FORECAST_COLOR,
                 line=dict(
@@ -1654,14 +1727,12 @@ if not monthly_mae_df.empty:
                     width=1.2
                 )
             ),
-
             text=[
                 f"{value:.2f}"
-                for value in monthly_performance["Monthly_MAE"]
+                for value in monthly_daily_performance["Monthly_MAE"]
             ],
             textposition="outside",
             cliponaxis=False,
-
             hovertemplate=(
                 "<b>%{x}</b><br>"
                 "MAE: %{y:.2f}"
@@ -1669,11 +1740,17 @@ if not monthly_mae_df.empty:
             )
         ))
 
-        maximum_mae = (
-            monthly_performance["Monthly_MAE"].max()
+        maximum_daily_mae = (
+            monthly_daily_performance["Monthly_MAE"].max()
         )
 
-        fig_monthly_mae.update_layout(
+        daily_ymax = (
+            maximum_daily_mae * 1.18
+            if pd.notna(maximum_daily_mae) and maximum_daily_mae > 0
+            else 100
+        )
+
+        fig_monthly_daily.update_layout(
             xaxis_title="Month",
             yaxis_title="MAE",
             height=500,
@@ -1687,7 +1764,7 @@ if not monthly_mae_df.empty:
             )
         )
 
-        fig_monthly_mae.update_xaxes(
+        fig_monthly_daily.update_xaxes(
             type="category",
             categoryorder="array",
             categoryarray=[
@@ -1698,118 +1775,52 @@ if not monthly_mae_df.empty:
             fixedrange=True
         )
 
-        fig_monthly_mae.update_yaxes(
-            range=[
-                0,
-                maximum_mae * 1.18
-            ],
+        fig_monthly_daily.update_yaxes(
+            range=[0, daily_ymax],
             rangemode="tozero",
             fixedrange=True
         )
 
         st.plotly_chart(
-            fig_monthly_mae,
-            use_container_width=True,
+            fig_monthly_daily,
+            width="stretch",
             key="monthwise_daily_forecast_mae",
             config={
                 "displayModeBar": False,
-                "scrollZoom": False
+                "staticPlot": True,
+                "responsive": True
             }
         )
 
 else:
     st.warning(
         "Not enough valid data is available to calculate "
-        "the month-wise Daily Forecast MAE."
+        "month-wise Daily Forecast MAE."
     )
-    
+
 # =====================================================
 # MONTH-WISE OVERALL MAE — 2-HOUR AHEAD FORECAST
-# One bar per calendar month across all years
 # =====================================================
 
-monthly_2hr_mae_df = df.dropna(
-    subset=[
-        "valid_time_ist",
-        "Actual_GHI",
-        "Two_Hour_Ahead_Forecast"
-    ]
-).copy()
-
-monthly_2hr_mae_df["hour"] = (
-    monthly_2hr_mae_df["valid_time_ist"].dt.hour
-    + monthly_2hr_mae_df["valid_time_ist"].dt.minute / 60
+monthly_2hr_performance, twohr_monthly_start, twohr_monthly_end = (
+    calculate_monthly_2hr_mae(df)
 )
 
-monthly_2hr_mae_df = monthly_2hr_mae_df[
-    (monthly_2hr_mae_df["hour"] >= 6.5)
-    & (monthly_2hr_mae_df["hour"] <= 17.5)
-    & (monthly_2hr_mae_df["Actual_GHI"] > 50)
-].copy()
-
-if not monthly_2hr_mae_df.empty:
-
-    monthly_2hr_mae_df["Absolute_Error"] = (
-        monthly_2hr_mae_df["Actual_GHI"]
-        - monthly_2hr_mae_df["Two_Hour_Ahead_Forecast"]
-    ).abs()
-
-    monthly_2hr_mae_df["Month_Number"] = (
-        monthly_2hr_mae_df["valid_time_ist"].dt.month
-    )
-
-    monthly_2hr_performance = (
-        monthly_2hr_mae_df
-        .groupby("Month_Number", as_index=False)
-        .agg(
-            Monthly_MAE=("Absolute_Error", "mean")
-        )
-        .sort_values("Month_Number")
-        .reset_index(drop=True)
-    )
-
-    month_names = {
-        1: "Jan",
-        2: "Feb",
-        3: "Mar",
-        4: "Apr",
-        5: "May",
-        6: "Jun",
-        7: "Jul",
-        8: "Aug",
-        9: "Sep",
-        10: "Oct",
-        11: "Nov",
-        12: "Dec"
-    }
-
-    monthly_2hr_performance["Month"] = (
-        monthly_2hr_performance["Month_Number"]
-        .map(month_names)
-    )
-
-    monthly_2hr_start_date = (
-        monthly_2hr_mae_df["valid_time_ist"].dt.date.min()
-    )
-
-    monthly_2hr_end_date = (
-        monthly_2hr_mae_df["valid_time_ist"].dt.date.max()
-    )
+if not monthly_2hr_performance.empty:
 
     st.markdown(
         f"## 📊 Month-Wise MAE of 2-Hour Ahead Forecast "
-        f"({monthly_2hr_start_date} to {monthly_2hr_end_date})"
+        f"({twohr_monthly_start} to {twohr_monthly_end})"
     )
 
     with st.container(border=True):
 
-        fig_monthly_2hr_mae = go.Figure()
+        fig_monthly_2hr = go.Figure()
 
-        fig_monthly_2hr_mae.add_trace(go.Bar(
+        fig_monthly_2hr.add_trace(go.Bar(
             x=monthly_2hr_performance["Month"],
             y=monthly_2hr_performance["Monthly_MAE"],
             name="2-Hour Ahead Forecast MAE",
-
             marker=dict(
                 color=TWO_HOUR_COLOR,
                 line=dict(
@@ -1817,14 +1828,12 @@ if not monthly_2hr_mae_df.empty:
                     width=1.2
                 )
             ),
-
             text=[
                 f"{value:.2f}"
                 for value in monthly_2hr_performance["Monthly_MAE"]
             ],
             textposition="outside",
             cliponaxis=False,
-
             hovertemplate=(
                 "<b>%{x}</b><br>"
                 "MAE: %{y:.2f}"
@@ -1836,7 +1845,13 @@ if not monthly_2hr_mae_df.empty:
             monthly_2hr_performance["Monthly_MAE"].max()
         )
 
-        fig_monthly_2hr_mae.update_layout(
+        twohr_ymax = (
+            maximum_2hr_mae * 1.18
+            if pd.notna(maximum_2hr_mae) and maximum_2hr_mae > 0
+            else 100
+        )
+
+        fig_monthly_2hr.update_layout(
             xaxis_title="Month",
             yaxis_title="MAE",
             height=500,
@@ -1850,7 +1865,7 @@ if not monthly_2hr_mae_df.empty:
             )
         )
 
-        fig_monthly_2hr_mae.update_xaxes(
+        fig_monthly_2hr.update_xaxes(
             type="category",
             categoryorder="array",
             categoryarray=[
@@ -1861,22 +1876,20 @@ if not monthly_2hr_mae_df.empty:
             fixedrange=True
         )
 
-        fig_monthly_2hr_mae.update_yaxes(
-            range=[
-                0,
-                maximum_2hr_mae * 1.18
-            ],
+        fig_monthly_2hr.update_yaxes(
+            range=[0, twohr_ymax],
             rangemode="tozero",
             fixedrange=True
         )
 
         st.plotly_chart(
-            fig_monthly_2hr_mae,
-            use_container_width=True,
+            fig_monthly_2hr,
+            width="stretch",
             key="monthwise_2hour_forecast_mae",
             config={
                 "displayModeBar": False,
-                "scrollZoom": False
+                "staticPlot": True,
+                "responsive": True
             }
         )
 
@@ -1885,3 +1898,4 @@ else:
         "Not enough valid 2-hour-ahead forecast data is available "
         "to calculate month-wise MAE."
     )
+
