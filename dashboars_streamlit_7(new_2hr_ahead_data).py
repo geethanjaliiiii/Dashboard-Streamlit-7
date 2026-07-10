@@ -13,8 +13,6 @@ import numpy as np
 import plotly.graph_objects as go
 from datetime import time
 from textwrap import dedent
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
 
 st.set_page_config(
     page_title="Solar GHI Forecasting Dashboard",
@@ -1558,8 +1556,8 @@ else:
         )
         
 # =====================================================
-# MONTHLY MAE PERFORMANCE — DAILY FORECAST
-# FIXED EXCEL-STYLE 3D COLUMN CHART
+# MONTH-WISE OVERALL MAE — DAILY FORECAST
+# One bar per calendar month across all years
 # =====================================================
 
 monthly_mae_df = df.dropna(
@@ -1575,7 +1573,7 @@ monthly_mae_df["hour"] = (
     + monthly_mae_df["valid_time_ist"].dt.minute / 60
 )
 
-# Use the same evaluation conditions as other metrics
+# Apply the same evaluation conditions used elsewhere
 monthly_mae_df = monthly_mae_df[
     (monthly_mae_df["hour"] >= 6.5)
     & (monthly_mae_df["hour"] <= 17.5)
@@ -1584,32 +1582,46 @@ monthly_mae_df = monthly_mae_df[
 
 if not monthly_mae_df.empty:
 
-    # Absolute error for each valid row
+    # Absolute error for every valid timestamp
     monthly_mae_df["Absolute_Error"] = (
         monthly_mae_df["Actual_GHI"]
         - monthly_mae_df["Daily_Forecast_GHI"]
     ).abs()
 
-    # Keep every month of every year as a separate period
-    monthly_mae_df["Year_Month"] = (
-        monthly_mae_df["valid_time_ist"].dt.to_period("M")
+    # Extract calendar month number: January=1, ..., December=12
+    monthly_mae_df["Month_Number"] = (
+        monthly_mae_df["valid_time_ist"].dt.month
     )
 
+    # Calculate one MAE value for each month across all years
     monthly_performance = (
         monthly_mae_df
-        .groupby("Year_Month", as_index=False)
+        .groupby("Month_Number", as_index=False)
         .agg(
             Monthly_MAE=("Absolute_Error", "mean")
         )
-        .sort_values("Year_Month")
+        .sort_values("Month_Number")
         .reset_index(drop=True)
     )
 
-    # Labels such as Jan 2024, Feb 2024, Jan 2025
-    monthly_performance["Month_Year"] = (
-        monthly_performance["Year_Month"]
-        .dt.to_timestamp()
-        .dt.strftime("%b %Y")
+    month_names = {
+        1: "Jan",
+        2: "Feb",
+        3: "Mar",
+        4: "Apr",
+        5: "May",
+        6: "Jun",
+        7: "Jul",
+        8: "Aug",
+        9: "Sep",
+        10: "Oct",
+        11: "Nov",
+        12: "Dec"
+    }
+
+    monthly_performance["Month"] = (
+        monthly_performance["Month_Number"]
+        .map(month_names)
     )
 
     monthly_start_date = (
@@ -1621,174 +1633,92 @@ if not monthly_mae_df.empty:
     )
 
     st.markdown(
-        f"## 📊 Monthly MAE of Daily Forecast "
+        f"## 📊 Month-Wise MAE of Daily Forecast "
         f"({monthly_start_date} to {monthly_end_date})"
     )
 
     with st.container(border=True):
 
-        # -------------------------------------------------
-        # DATA FOR 3D BARS
-        # -------------------------------------------------
+        fig_monthly_mae = go.Figure()
 
-        x_positions = np.arange(len(monthly_performance))
-        y_positions = np.zeros(len(monthly_performance))
-        z_positions = np.zeros(len(monthly_performance))
+        fig_monthly_mae.add_trace(go.Bar(
+            x=monthly_performance["Month"],
+            y=monthly_performance["Monthly_MAE"],
+            name="Daily Forecast MAE",
 
-        bar_width = np.full(
-            len(monthly_performance),
-            0.62
-        )
-
-        bar_depth = np.full(
-            len(monthly_performance),
-            0.55
-        )
-
-        bar_heights = (
-            monthly_performance["Monthly_MAE"]
-            .astype(float)
-            .to_numpy()
-        )
-
-        # Convert your dashboard orange to RGB values from 0 to 1
-        daily_orange = (
-            242 / 255,
-            142 / 255,
-            43 / 255
-        )
-
-        # -------------------------------------------------
-        # CREATE STATIC 3D FIGURE
-        # -------------------------------------------------
-
-        figure_width = max(
-            14,
-            len(monthly_performance) * 0.65
-        )
-
-        fig_monthly_mae = plt.figure(
-            figsize=(figure_width, 7)
-        )
-
-        ax = fig_monthly_mae.add_subplot(
-            111,
-            projection="3d"
-        )
-
-        ax.bar3d(
-            x_positions,
-            y_positions,
-            z_positions,
-            bar_width,
-            bar_depth,
-            bar_heights,
-            color=daily_orange,
-            edgecolor="black",
-            linewidth=0.5,
-            shade=True
-        )
-
-        # -------------------------------------------------
-        # VALUE LABELS ABOVE BARS
-        # -------------------------------------------------
-
-        maximum_mae = max(bar_heights)
-
-        label_offset = max(
-            maximum_mae * 0.025,
-            1
-        )
-
-        for x_value, mae_value in zip(
-            x_positions,
-            bar_heights
-        ):
-            ax.text(
-                x_value + 0.31,
-                0.27,
-                mae_value + label_offset,
-                f"{mae_value:.2f}",
-                ha="center",
-                va="bottom",
-                fontsize=9,
-                fontweight="bold"
-            )
-
-        # -------------------------------------------------
-        # AXES AND LABELS
-        # -------------------------------------------------
-
-        ax.set_xlabel(
-            "Month and Year",
-            labelpad=18,
-            fontsize=11,
-            fontweight="bold"
-        )
-
-        ax.set_zlabel(
-            "MAE",
-            labelpad=10,
-            fontsize=11,
-            fontweight="bold"
-        )
-
-        # Hide the depth-axis tick labels
-        ax.set_yticks([])
-
-        ax.set_xticks(
-            x_positions + 0.31
-        )
-
-        ax.set_xticklabels(
-            monthly_performance["Month_Year"],
-            rotation=45,
-            ha="right",
-            fontsize=9
-        )
-
-        ax.set_zlim(
-            0,
-            maximum_mae * 1.18
-        )
-
-        # Fixed Excel-like viewing angle
-        ax.view_init(
-            elev=22,
-            azim=-58
-        )
-
-        # Improve the relative proportions
-        try:
-            ax.set_box_aspect(
-                (
-                    max(len(monthly_performance), 8),
-                    2.8,
-                    5
+            # Same orange as the Daily Forecast line
+            marker=dict(
+                color=DAILY_FORECAST_COLOR,
+                line=dict(
+                    color="#B65F00",
+                    width=1.2
                 )
+            ),
+
+            text=[
+                f"{value:.2f}"
+                for value in monthly_performance["Monthly_MAE"]
+            ],
+            textposition="outside",
+            cliponaxis=False,
+
+            hovertemplate=(
+                "<b>%{x}</b><br>"
+                "MAE: %{y:.2f}"
+                "<extra></extra>"
             )
-        except AttributeError:
-            pass
+        ))
 
-        # Light pane backgrounds
-        ax.xaxis.pane.set_alpha(0.05)
-        ax.yaxis.pane.set_alpha(0.05)
-        ax.zaxis.pane.set_alpha(0.05)
-
-        ax.grid(True)
-
-        plt.tight_layout()
-
-        # st.pyplot displays a fixed image, so users cannot rotate it
-        st.pyplot(
-            fig_monthly_mae,
-            use_container_width=True
+        maximum_mae = (
+            monthly_performance["Monthly_MAE"].max()
         )
 
-        plt.close(fig_monthly_mae)
+        fig_monthly_mae.update_layout(
+            xaxis_title="Month",
+            yaxis_title="MAE",
+            height=500,
+            bargap=0.25,
+            showlegend=False,
+            margin=dict(
+                l=45,
+                r=25,
+                t=30,
+                b=55
+            )
+        )
+
+        fig_monthly_mae.update_xaxes(
+            type="category",
+            categoryorder="array",
+            categoryarray=[
+                "Jan", "Feb", "Mar", "Apr",
+                "May", "Jun", "Jul", "Aug",
+                "Sep", "Oct", "Nov", "Dec"
+            ],
+            fixedrange=True
+        )
+
+        fig_monthly_mae.update_yaxes(
+            range=[
+                0,
+                maximum_mae * 1.18
+            ],
+            rangemode="tozero",
+            fixedrange=True
+        )
+
+        st.plotly_chart(
+            fig_monthly_mae,
+            use_container_width=True,
+            key="monthwise_daily_forecast_mae",
+            config={
+                "displayModeBar": False,
+                "scrollZoom": False
+            }
+        )
 
 else:
     st.warning(
         "Not enough valid data is available to calculate "
-        "monthly Daily Forecast MAE."
+        "the month-wise Daily Forecast MAE."
     )
