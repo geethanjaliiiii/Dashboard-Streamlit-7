@@ -1554,4 +1554,187 @@ else:
             "Not enough valid data to calculate "
             "overall forecast performance."
         )
+        
 # =====================================================
+# MONTHLY MAE PERFORMANCE — DAILY FORECAST
+# =====================================================
+
+monthly_mae_df = df.dropna(
+    subset=[
+        "valid_time_ist",
+        "Actual_GHI",
+        "Daily_Forecast_GHI"
+    ]
+).copy()
+
+monthly_mae_df["hour"] = (
+    monthly_mae_df["valid_time_ist"].dt.hour
+    + monthly_mae_df["valid_time_ist"].dt.minute / 60
+)
+
+# Same evaluation conditions used in the other metrics
+monthly_mae_df = monthly_mae_df[
+    (monthly_mae_df["hour"] >= 6.5)
+    & (monthly_mae_df["hour"] <= 17.5)
+    & (monthly_mae_df["Actual_GHI"] > 50)
+].copy()
+
+if not monthly_mae_df.empty:
+
+    # Absolute error for every valid row
+    monthly_mae_df["Absolute_Error"] = (
+        monthly_mae_df["Actual_GHI"]
+        - monthly_mae_df["Daily_Forecast_GHI"]
+    ).abs()
+
+    # Use one unique month-year period for every bar
+    monthly_mae_df["Year_Month"] = (
+        monthly_mae_df["valid_time_ist"].dt.to_period("M")
+    )
+
+    monthly_performance = (
+        monthly_mae_df
+        .groupby("Year_Month", as_index=False)
+        .agg(
+            Monthly_MAE=("Absolute_Error", "mean")
+        )
+    )
+
+    monthly_performance = monthly_performance.sort_values(
+        "Year_Month"
+    ).reset_index(drop=True)
+
+    # Examples: Jan 2024, Feb 2024, Jan 2025
+    monthly_performance["Month_Year"] = (
+        monthly_performance["Year_Month"]
+        .dt.to_timestamp()
+        .dt.strftime("%b %Y")
+    )
+
+    monthly_start_date = (
+        monthly_mae_df["valid_time_ist"].dt.date.min()
+    )
+
+    monthly_end_date = (
+        monthly_mae_df["valid_time_ist"].dt.date.max()
+    )
+
+    # One main heading only
+    st.markdown(
+        f"## 📊 Monthly MAE of Daily Forecast "
+        f"({monthly_start_date} to {monthly_end_date})"
+    )
+
+    with st.container(border=True):
+
+        fig_monthly_mae = go.Figure()
+
+        # -------------------------------------------------
+        # SHADOW BARS
+        # Creates visual depth behind the main orange bars
+        # -------------------------------------------------
+
+        fig_monthly_mae.add_trace(go.Bar(
+            x=monthly_performance["Month_Year"],
+            y=monthly_performance["Monthly_MAE"],
+            name="Shadow",
+            marker=dict(
+                color="rgba(90, 55, 20, 0.35)",
+                line=dict(
+                    color="rgba(90, 55, 20, 0.55)",
+                    width=1
+                )
+            ),
+            offset=0.08,
+            width=0.65,
+            hoverinfo="skip",
+            showlegend=False
+        ))
+
+        # -------------------------------------------------
+        # MAIN ORANGE BARS
+        # Same colour as Daily Forecast
+        # -------------------------------------------------
+
+        fig_monthly_mae.add_trace(go.Bar(
+            x=monthly_performance["Month_Year"],
+            y=monthly_performance["Monthly_MAE"],
+            name="Monthly MAE",
+            marker=dict(
+                color=DAILY_FORECAST_COLOR,
+                line=dict(
+                    color="rgba(150, 75, 0, 0.95)",
+                    width=1.5
+                )
+            ),
+            width=0.65,
+            text=[
+                f"{value:.2f}"
+                for value in monthly_performance["Monthly_MAE"]
+            ],
+            textposition="outside",
+            cliponaxis=False,
+            hovertemplate=(
+                "<b>%{x}</b><br>"
+                "Monthly MAE: %{y:.2f}"
+                "<extra></extra>"
+            ),
+            showlegend=False
+        ))
+
+        maximum_monthly_mae = (
+            monthly_performance["Monthly_MAE"].max()
+        )
+
+        fig_monthly_mae.update_layout(
+            xaxis_title="Month and Year",
+            yaxis_title="MAE",
+            height=560,
+            barmode="overlay",
+            bargap=0.22,
+            margin=dict(
+                l=45,
+                r=25,
+                t=35,
+                b=120
+            ),
+            showlegend=False,
+            hovermode="closest"
+        )
+
+        fig_monthly_mae.update_xaxes(
+            type="category",
+            categoryorder="array",
+            categoryarray=monthly_performance[
+                "Month_Year"
+            ].tolist(),
+            tickangle=-45,
+            fixedrange=True
+        )
+
+        fig_monthly_mae.update_yaxes(
+            range=[
+                0,
+                maximum_monthly_mae * 1.18
+            ],
+            fixedrange=True,
+            rangemode="tozero",
+            gridcolor="rgba(128,128,128,0.20)"
+        )
+
+        st.plotly_chart(
+            fig_monthly_mae,
+            use_container_width=True,
+            key="monthly_daily_forecast_mae",
+            config={
+                "staticPlot": True,
+                "displayModeBar": False,
+                "responsive": True
+            }
+        )
+
+else:
+    st.warning(
+        "Not enough valid data is available to calculate "
+        "monthly Daily Forecast MAE."
+    )
