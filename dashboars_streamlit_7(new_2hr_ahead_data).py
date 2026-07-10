@@ -1722,3 +1722,166 @@ else:
         "Not enough valid data is available to calculate "
         "the month-wise Daily Forecast MAE."
     )
+    
+# =====================================================
+# MONTH-WISE OVERALL MAE — 2-HOUR AHEAD FORECAST
+# One bar per calendar month across all years
+# =====================================================
+
+monthly_2hr_mae_df = df.dropna(
+    subset=[
+        "valid_time_ist",
+        "Actual_GHI",
+        "Two_Hour_Ahead_Forecast"
+    ]
+).copy()
+
+monthly_2hr_mae_df["hour"] = (
+    monthly_2hr_mae_df["valid_time_ist"].dt.hour
+    + monthly_2hr_mae_df["valid_time_ist"].dt.minute / 60
+)
+
+monthly_2hr_mae_df = monthly_2hr_mae_df[
+    (monthly_2hr_mae_df["hour"] >= 6.5)
+    & (monthly_2hr_mae_df["hour"] <= 17.5)
+    & (monthly_2hr_mae_df["Actual_GHI"] > 50)
+].copy()
+
+if not monthly_2hr_mae_df.empty:
+
+    monthly_2hr_mae_df["Absolute_Error"] = (
+        monthly_2hr_mae_df["Actual_GHI"]
+        - monthly_2hr_mae_df["Two_Hour_Ahead_Forecast"]
+    ).abs()
+
+    monthly_2hr_mae_df["Month_Number"] = (
+        monthly_2hr_mae_df["valid_time_ist"].dt.month
+    )
+
+    monthly_2hr_performance = (
+        monthly_2hr_mae_df
+        .groupby("Month_Number", as_index=False)
+        .agg(
+            Monthly_MAE=("Absolute_Error", "mean")
+        )
+        .sort_values("Month_Number")
+        .reset_index(drop=True)
+    )
+
+    month_names = {
+        1: "Jan",
+        2: "Feb",
+        3: "Mar",
+        4: "Apr",
+        5: "May",
+        6: "Jun",
+        7: "Jul",
+        8: "Aug",
+        9: "Sep",
+        10: "Oct",
+        11: "Nov",
+        12: "Dec"
+    }
+
+    monthly_2hr_performance["Month"] = (
+        monthly_2hr_performance["Month_Number"]
+        .map(month_names)
+    )
+
+    monthly_2hr_start_date = (
+        monthly_2hr_mae_df["valid_time_ist"].dt.date.min()
+    )
+
+    monthly_2hr_end_date = (
+        monthly_2hr_mae_df["valid_time_ist"].dt.date.max()
+    )
+
+    st.markdown(
+        f"## 📊 Month-Wise MAE of 2-Hour Ahead Forecast "
+        f"({monthly_2hr_start_date} to {monthly_2hr_end_date})"
+    )
+
+    with st.container(border=True):
+
+        fig_monthly_2hr_mae = go.Figure()
+
+        fig_monthly_2hr_mae.add_trace(go.Bar(
+            x=monthly_2hr_performance["Month"],
+            y=monthly_2hr_performance["Monthly_MAE"],
+            name="2-Hour Ahead Forecast MAE",
+
+            marker=dict(
+                color=TWO_HOUR_COLOR,
+                line=dict(
+                    color="#1F7A1F",
+                    width=1.2
+                )
+            ),
+
+            text=[
+                f"{value:.2f}"
+                for value in monthly_2hr_performance["Monthly_MAE"]
+            ],
+            textposition="outside",
+            cliponaxis=False,
+
+            hovertemplate=(
+                "<b>%{x}</b><br>"
+                "MAE: %{y:.2f}"
+                "<extra></extra>"
+            )
+        ))
+
+        maximum_2hr_mae = (
+            monthly_2hr_performance["Monthly_MAE"].max()
+        )
+
+        fig_monthly_2hr_mae.update_layout(
+            xaxis_title="Month",
+            yaxis_title="MAE",
+            height=500,
+            bargap=0.25,
+            showlegend=False,
+            margin=dict(
+                l=45,
+                r=25,
+                t=30,
+                b=55
+            )
+        )
+
+        fig_monthly_2hr_mae.update_xaxes(
+            type="category",
+            categoryorder="array",
+            categoryarray=[
+                "Jan", "Feb", "Mar", "Apr",
+                "May", "Jun", "Jul", "Aug",
+                "Sep", "Oct", "Nov", "Dec"
+            ],
+            fixedrange=True
+        )
+
+        fig_monthly_2hr_mae.update_yaxes(
+            range=[
+                0,
+                maximum_2hr_mae * 1.18
+            ],
+            rangemode="tozero",
+            fixedrange=True
+        )
+
+        st.plotly_chart(
+            fig_monthly_2hr_mae,
+            use_container_width=True,
+            key="monthwise_2hour_forecast_mae",
+            config={
+                "displayModeBar": False,
+                "scrollZoom": False
+            }
+        )
+
+else:
+    st.warning(
+        "Not enough valid 2-hour-ahead forecast data is available "
+        "to calculate month-wise MAE."
+    )
